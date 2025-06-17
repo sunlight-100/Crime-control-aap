@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <title>अधिनियम और धाराएँ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+    import {
+      getFirestore, collection, doc, addDoc, getDocs,
+      deleteDoc, updateDoc, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDgOJlG_QVAa0UYUHh4dYMu9MvvmGDN8kk",
+      authDomain: "sunlight-edu.firebaseapp.com",
+      projectId: "sunlight-edu",
+      storageBucket: "sunlight-edu.appspot.com",
+      messagingSenderId: "69470727943",
+      appId: "1:69470727943:web:dcafc46f319e6eba56dfa2"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    async function loadActs() {
+      const actSelect = document.getElementById("actSelect");
+      actSelect.innerHTML = `<option value="">-- कोई अधिनियम चुनें --</option>`;
+      const snap = await getDocs(collection(db, "acts"));
+      snap.forEach(docSnap => {
+        const opt = document.createElement("option");
+        opt.value = docSnap.id;
+        opt.textContent = docSnap.data().name;
+        actSelect.appendChild(opt);
+      });
+    }
+
+    async function addAct() {
+      const name = document.getElementById("actName").value.trim();
+      if (!name) return;
+      await addDoc(collection(db, "acts"), { name });
+      document.getElementById("actName").value = "";
+      loadActs();
+    }
+
+    async function addSection() {
+      const actId = document.getElementById("actSelect").value;
+      const number = parseInt(document.getElementById("secNumber").value);
+      const title = document.getElementById("secTitle").value.trim();
+      const tags = Array.from(document.getElementById("secTags").selectedOptions).map(o => o.value);
+      if (!actId || !number || !title) return;
+      await addDoc(collection(db, "acts", actId, "sections"), { number, title, tags });
+      loadSections(actId);
+      document.getElementById("secNumber").value = "";
+      document.getElementById("secTitle").value = "";
+    }
+
+    async function loadSections(actId) {
+      const list = document.getElementById("sectionList");
+      list.innerHTML = "";
+      const q = query(collection(db, "acts", actId, "sections"), orderBy("number"));
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        const div = document.createElement("div");
+        div.className = "bg-white p-4 rounded shadow mb-3";
+        div.innerHTML = `
+          <div class="text-lg font-semibold">धारा ${data.number}</div>
+          <div class="text-gray-700 mb-2">${data.title}</div>
+          <div class="text-sm text-gray-500">टैग्स: ${data.tags?.join(", ") || "कोई नहीं"}</div>
+          <div class="mt-2">
+            <button class="bg-blue-500 text-white px-3 py-1 rounded mr-2" onclick="editSection('${actId}', '${docSnap.id}', '${data.number}', '${data.title}')">संपादित करें</button>
+            <button class="bg-red-500 text-white px-3 py-1 rounded" onclick="deleteSection('${actId}', '${docSnap.id}')">हटाएं</button>
+          </div>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    async function editSection(actId, sectionId, number, title) {
+      const newTitle = prompt("नई धारा शीर्षक दर्ज करें:", title);
+      if (!newTitle) return;
+      await updateDoc(doc(db, "acts", actId, "sections", sectionId), { title: newTitle });
+      loadSections(actId);
+    }
+
+    async function deleteSection(actId, sectionId) {
+      if (!confirm("क्या आप वाकई हटाना चाहते हैं?")) return;
+      await deleteDoc(doc(db, "acts", actId, "sections", sectionId));
+      loadSections(actId);
+    }
+
+    async function searchByKeyword() {
+      const actId = document.getElementById("actSelect").value;
+      const keyword = document.getElementById("searchKeyword").value.toLowerCase().trim();
+      if (!actId || !keyword) return alert("कृपया अधिनियम और शब्द चुनें");
+      const list = document.getElementById("sectionList");
+      list.innerHTML = "";
+
+      const snap = await getDocs(collection(db, "acts", actId, "sections"));
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (
+          (data.title && data.title.toLowerCase().includes(keyword)) ||
+          (data.number && data.number.toString().includes(keyword))
+        ) {
+          const div = document.createElement("div");
+          div.className = "bg-white p-4 rounded shadow mb-3";
+          div.innerHTML = `धारा ${data.number}: ${data.title} <br><small>टैग्स: ${data.tags?.join(", ") || "कोई नहीं"}</small>`;
+          list.appendChild(div);
+        }
+      });
+    }
+
+    async function searchByTagsAND() {
+      const actId = document.getElementById("actSelect").value;
+      const tagList = Array.from(document.getElementById("searchTags").selectedOptions).map(o => o.value);
+      if (!actId || tagList.length === 0) return;
+      const list = document.getElementById("sectionList");
+      list.innerHTML = "";
+      const snap = await getDocs(collection(db, "acts", actId, "sections"));
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.tags && tagList.every(t => data.tags.includes(t))) {
+          const div = document.createElement("div");
+          div.className = "bg-white p-4 rounded shadow mb-3";
+          div.innerHTML = `धारा ${data.number}: ${data.title} <br><small>टैग्स: ${data.tags.join(", ")}</small>`;
+          list.appendChild(div);
+        }
+      });
+    }
+
+    function clearSearch() {
+      document.getElementById("searchKeyword").value = "";
+      document.getElementById("searchTags").selectedIndex = -1;
+      document.getElementById("sectionList").innerHTML = "";
+    }
+
+    function printSections() {
+      const content = document.getElementById("sectionList").innerHTML;
+      const win = window.open("", "", "width=800,height=600");
+      win.document.write(`<html><head><title>प्रिंट</title></head><body>${content}</body></html>`);
+      win.document.close();
+      win.print();
+    }
+
+    window.loadActs = loadActs;
+    window.addAct = addAct;
+    window.addSection = addSection;
+    window.loadSections = loadSections;
+    window.editSection = editSection;
+    window.deleteSection = deleteSection;
+    window.searchByKeyword = searchByKeyword;
+    window.searchByTagsAND = searchByTagsAND;
+    window.clearSearch = clearSearch;
+    window.printSections = printSections;
+
+    window.onload = loadActs;
+  </script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4">
+
+  <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow">
+    <h1 class="text-2xl font-bold mb-4 text-center">अधिनियम और धाराएँ</h1>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+      <select id="actSelect" onchange="loadSections(this.value)" class="p-2 border rounded grow">
+        <option value="">-- कोई अधिनियम चुनें --</option>
+      </select>
+      <input id="actName" class="p-2 border rounded grow" placeholder="नया अधिनियम">
+      <button onclick="addAct()" class="bg-green-600 text-white px-4 py-2 rounded">जोड़ें</button>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+      <input id="secNumber" type="number" class="p-2 border rounded w-24" placeholder="संख्या">
+      <input id="secTitle" class="p-2 border rounded grow" placeholder="धारा शीर्षक">
+      <select id="secTags" multiple class="p-2 border rounded grow">
+        <option value="महिला">महिला</option>
+        <option value="गंभीर">गंभीर</option>
+        <option value="अपराध">अपराध</option>
+        <option value="दंडनीय">दंडनीय</option>
+        <option value="न्यायिक">न्यायिक</option>
+        <option value="गैर-जमानती">गैर-जमानती</option>
+      </select>
+      <button onclick="addSection()" class="bg-blue-600 text-white px-4 py-2 rounded">धारा जोड़ें</button>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mb-4">
+      <input id="searchKeyword" class="p-2 border rounded grow" placeholder="शीर्षक या संख्या खोजें">
+      <button onclick="searchByKeyword()" class="bg-indigo-600 text-white px-4 py-2 rounded">खोजें</button>
+      <select id="searchTags" multiple class="p-2 border rounded grow">
+        <option value="महिला">महिला</option>
+        <option value="गंभीर">गंभीर</option>
+        <option value="अपराध">अपराध</option>
+        <option value="दंडनीय">दंडनीय</option>
+        <option value="न्यायिक">न्यायिक</option>
+        <option value="गैर-जमानती">गैर-जमानती</option>
+      </select>
+      <button onclick="searchByTagsAND()" class="bg-purple-600 text-white px-4 py-2 rounded">टैग खोजें</button>
+      <button onclick="clearSearch()" class="bg-gray-500 text-white px-4 py-2 rounded">साफ़ करें</button>
+      <button onclick="printSections()" class="bg-yellow-600 text-white px-4 py-2 rounded">प्रिंट करें</button>
+    </div>
+
+    <div id="sectionList" class="space-y-2"></div>
+  </div>
+</body>
+</html>
